@@ -43,6 +43,7 @@ import org.apache.jackrabbit.webdav.client.methods.PropFindMethod;
 import org.apache.jackrabbit.webdav.property.DavPropertyNameSet;
 import org.apache.log4j.Logger;
 
+import java.io.File;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Proxy;
@@ -50,7 +51,9 @@ import java.net.ProxySelector;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Date;
 import java.util.List;
+import java.util.Scanner;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -245,6 +248,44 @@ public final class DavGatewayHttpClientFacade {
                     httpClient.getState().setProxyCredentials(authScope,
                             new NTCredentials(proxyUser, proxyPassword, "UNKNOWN", ""));
                 }
+            }
+        }
+
+        final String cookiesFile = Settings.getProperty("davmail.cookieFilePath");
+
+        if(cookiesFile != null) {
+            Scanner scanner = null;
+            try {
+                scanner = new Scanner(new File(cookiesFile));
+                final boolean cookiesNeverExpire = Settings.getBooleanProperty("davmail.cookiesNeverExpire", Boolean.FALSE);
+                while (scanner.hasNext()) {
+                    final String line = scanner.nextLine();
+                    // skip empty lines and comments
+                    if (!line.isEmpty() && !line.startsWith("#")) {
+                        // they are tab delimited
+                        final String[] cookieTokens = line.split("\t");
+                        // 7 is the valid number of fields in a cookies file
+                        if (cookieTokens.length == 7) {
+                            final Cookie cookie = new Cookie();
+                            cookie.setDomain(cookieTokens[0]);
+                            cookie.setPath(cookieTokens[2]);
+                            cookie.setSecure("TRUE".equals(cookieTokens[3].toUpperCase()));
+                            cookie.setExpiryDate(new Date(cookiesNeverExpire ? Long.MAX_VALUE : (Long.parseLong(cookieTokens[4]) * 1000L)));
+                            cookie.setName(cookieTokens[5]);
+                            cookie.setValue(cookieTokens[6]);
+                            httpClient.getState().addCookie(cookie);
+                        }
+                    }
+                }
+            } catch (Throwable e) {
+                LOGGER.error("Reading cookies file '" + cookiesFile + "' failed!", e);
+            } finally {
+                if (scanner != null)
+                    try {
+                        scanner.close();
+                    } catch (Throwable e) {
+                        // ignore
+                    }
             }
         }
 
